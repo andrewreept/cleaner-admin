@@ -1,21 +1,38 @@
 'use client'
 
-const supabase = supabaseBrowser()
-
 import { useEffect, useState } from 'react'
-mport { supabaseBrowser } from '../lib/supabase'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { getSupabaseBrowser } from '../lib/supabase'
 import { Auth } from '@supabase/auth-ui-react'
 import { ThemeSupa } from '@supabase/auth-ui-shared'
-import { addJob, addExpense, listJobs, listExpenses, uploadReceipt, type Job, type Expense } from '../lib/data'
+import {
+  addJob,
+  addExpense,
+  listJobs,
+  listExpenses,
+  uploadReceipt,
+  type Job,
+  type Expense,
+  monthKey,
+  yearKey,
+  toCSV,
+} from '../lib/data'
 
 export default function AppClient() {
+  const [supabase, setSupabase] = useState<SupabaseClient | null>(null)
   const [session, setSession] = useState<any>(null)
 
+  // init Supabase in the browser only
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
-    return () => sub.subscription.unsubscribe()
+    const sb = getSupabaseBrowser()
+    if (!sb) return
+    setSupabase(sb)
+    sb.auth.getSession().then(({ data }) => setSession(data.session))
+    const { data: sub } = sb.auth.onAuthStateChange((_e, s) => setSession(s))
+    return () => sub?.subscription?.unsubscribe()
   }, [])
+
+  if (!supabase) return <Center><div>Starting…</div></Center>
 
   if (!session) {
     return (
@@ -28,21 +45,73 @@ export default function AppClient() {
     )
   }
 
-  return <Home />
+  return <Home supabase={supabase} />
 }
 
-function Home() {
+function Home({ supabase }: { supabase: SupabaseClient }) {
   const [tab, setTab] = useState<'jobs' | 'expenses'>('jobs')
+
   return (
     <div style={{ padding: 20, maxWidth: 900, margin: '0 auto' }}>
       <h1 style={{ fontSize: 22, marginBottom: 12 }}>Cleaner Admin</h1>
+
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         <button onClick={() => setTab('jobs')} style={tabBtn(tab === 'jobs')}>Jobs</button>
         <button onClick={() => setTab('expenses')} style={tabBtn(tab === 'expenses')}>Expenses</button>
         <div style={{ flex: 1 }} />
         <button onClick={() => supabase.auth.signOut()} style={btn}>Sign out</button>
       </div>
+
+      <Dashboard />
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <button
+          onClick={async () => {
+            const [jobs, expenses] = await Promise.all([listJobs(), listExpenses()])
+            const blob = new Blob([toCSV(jobs.concat(expenses))], { type: 'text/csv;charset=utf-8;' })
+            const a = document.createElement('a')
+            a.href = URL.createObjectURL(blob)
+            a.download = `cleaner-admin-export-${new Date().toISOString().slice(0,10)}.csv`
+            a.click()
+          }}
+          style={btn}
+        >
+          Export CSV
+        </button>
+      </div>
+
       {tab === 'jobs' ? <JobsTab /> : <ExpensesTab />}
+    </div>
+  )
+}
+
+/* ---------------- Dashboard (totals) ---------------- */
+
+function Dashboard() {
+  const [jobs, setJobs] = useState<Job[]>([])
+  useEffect(() => { listJobs().then(setJobs).catch(e=>alert(e.message)) }, [])
+
+  const today = new Date().toISOString().slice(0,10)
+  const mkey = monthKey(today)
+  const ykey = yearKey(today)
+
+  const monthIncome = jobs.filter(j => monthKey(j.date) === mkey).reduce((a,b)=>a+Number(b.amount),0)
+  const yearIncome  = jobs.filter(j => yearKey(j.date) === ykey).reduce((a,b)=>a+Number(b.amount),0)
+
+  const MONTH_LIMIT = 1000   // tweak later or add Settings
+  const YEAR_LIMIT  = 12000
+
+  return (
+    <div style={{ border: '1px solid #ddd', borderRadius: 10, padding: 12, marginBottom: 16 }}>
+      <div style={{ fontWeight: 600, marginBottom: 8 }}>At a glance</div>
+      <div>Income this month: <b>£{monthIncome.toFixed(2)}</b>{MONTH_LIMIT ? ` / £${MONTH_LIMIT}` : ''}</div>
+      <div>Income this year:  <b>£{yearIncome.toFixed(2)}</b>{YEAR_LIMIT ? ` / £${YEAR_LIMIT}` : ''}</div>
+      {(MONTH_LIMIT && monthIncome >= MONTH_LIMIT*0.8) && (
+        <div style={{ color: '#b45309', marginTop: 6 }}>Heads up: you’re over 80% of your monthly threshold.</div>
+      )}
+      {(YEAR_LIMIT && yearIncome >= YEAR_LIMIT*0.8) && (
+        <div style={{ color: '#b45309', marginTop: 4 }}>Heads up: you’re over 80% of your annual threshold.</div>
+      )}
     </div>
   )
 }
@@ -190,7 +259,6 @@ function ExpensesTab() {
 function Center({ children }: any) {
   return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>{children}</div>
 }
-
 function Panel({ title, children }: any) {
   return (
     <div style={{ border: '1px solid #ddd', borderRadius: 10, padding: 12, marginBottom: 16 }}>
@@ -199,7 +267,6 @@ function Panel({ title, children }: any) {
     </div>
   )
 }
-
 function Row({ children }: any) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'center', gap: 10, marginBottom: 8 }}>
@@ -207,6 +274,5 @@ function Row({ children }: any) {
     </div>
   )
 }
-
 const btn: React.CSSProperties = { padding: '8px 12px', border: '1px solid #ccc', borderRadius: 8, background: '#fff', cursor: 'pointer' }
 const tabBtn = (active: boolean): React.CSSProperties => ({ ...btn, background: active ? '#eef5ff' : '#fff' })
