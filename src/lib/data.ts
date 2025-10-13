@@ -1,8 +1,14 @@
 import { getSupabaseBrowser } from '../lib/supabase'
+import type { SupabaseClient } from '@supabase/supabase-js'  
 
-// helper to get client only when called in the browser
-function sb() {
-  return getSupabaseBrowser()
+// helper to get client only when available in the browser
+function sb(): SupabaseClient {
+  const c = getSupabaseBrowser()
+  if (!c) {
+    // This can happen if called during SSR or before the client initialises
+    throw new Error('Supabase client not initialised in browser')
+  }
+  return c
 }
 
 export type Job = {
