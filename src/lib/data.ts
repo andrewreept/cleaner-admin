@@ -77,8 +77,12 @@ export function monthKey(d: string) {
 export function yearKey(d: string) {
   return `${new Date(d).getFullYear()}`
 }
-export function toCSV(rows: any[]) {
-  const headers = Object.keys(rows[0] || {})
-  const lines = [headers.join(','), ...rows.map(r => headers.map(h => JSON.stringify(r[h] ?? '')).join(','))]
+export function toCSV<T extends Record<string, any>>(rows: T[]) {
+  if (!rows || rows.length === 0) return ''
+  const headers = Object.keys(rows[0])
+  const lines = [
+    headers.join(','),
+    ...rows.map(r => headers.map(h => JSON.stringify(r[h] ?? '')).join(',')),
+  ]
   return lines.join('\n')
 }

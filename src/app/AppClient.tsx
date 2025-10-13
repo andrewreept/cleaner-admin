@@ -66,14 +66,15 @@ function Home({ supabase }: { supabase: SupabaseClient }) {
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         <button
-          onClick={async () => {
-            const [jobs, expenses] = await Promise.all([listJobs(), listExpenses()])
-            const blob = new Blob([toCSV(jobs.concat(expenses))], { type: 'text/csv;charset=utf-8;' })
-            const a = document.createElement('a')
-            a.href = URL.createObjectURL(blob)
-            a.download = `cleaner-admin-export-${new Date().toISOString().slice(0,10)}.csv`
-            a.click()
-          }}
+        onClick={async () => {
+  const [jobs, expenses] = await Promise.all([listJobs(), listExpenses()])
+
+  const jobsCsv = toCSV(jobs)
+  const expCsv  = toCSV(expenses)
+
+  download(`jobs-${new Date().toISOString().slice(0,10)}.csv`, jobsCsv)
+  download(`expenses-${new Date().toISOString().slice(0,10)}.csv`, expCsv)
+}}
           style={btn}
         >
           Export CSV
@@ -274,5 +275,14 @@ function Row({ children }: any) {
     </div>
   )
 }
+
+function download(filename: string, text: string) {
+  const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = filename
+  a.click()
+}
+
 const btn: React.CSSProperties = { padding: '8px 12px', border: '1px solid #ccc', borderRadius: 8, background: '#fff', cursor: 'pointer' }
 const tabBtn = (active: boolean): React.CSSProperties => ({ ...btn, background: active ? '#eef5ff' : '#fff' })
