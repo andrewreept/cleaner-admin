@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Tesseract from 'tesseract.js'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseBrowser } from '../lib/supabase'
 import { Auth } from '@supabase/auth-ui-react'
@@ -188,7 +189,7 @@ function JobsTab() {
 
 /* --------------- Expenses (with OCR + business tick) --------------- */
 
-import Tesseract from 'tesseract.js' // add near top with other imports
+ // add near top with other imports
 
 type ExpenseLine = { id: string; label: string; total: number; business: boolean }
 
@@ -230,6 +231,10 @@ function ExpensesTab() {
       // preview
       const purl = URL.createObjectURL(file)
       setForm(f => ({ ...f, file, previewUrl: purl }))
+
+// load tesseract only when user picks a file
+	const Tesseract = (await import('tesseract.js')).default
+	const { data } = await Tesseract.recongize(file, 'eng', {logger: () => {} })
 
       // OCR
       const { data } = await Tesseract.recognize(file, 'eng', { logger: () => {} })
