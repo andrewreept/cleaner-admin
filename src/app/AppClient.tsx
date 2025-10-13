@@ -67,14 +67,14 @@ function Home({ supabase }: { supabase: SupabaseClient }) {
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         <button
         onClick={async () => {
-  const [jobs, expenses] = await Promise.all([listJobs(), listExpenses()])
+ 		 const [jobs, expenses] = await Promise.all([listJobs(), listExpenses()])
 
-  const jobsCsv = toCSV(jobs)
-  const expCsv  = toCSV(expenses)
+  		const jobsCsv = toCSV(jobs)
+  		const expCsv  = toCSV(expenses)
 
-  download(`jobs-${new Date().toISOString().slice(0,10)}.csv`, jobsCsv)
-  download(`expenses-${new Date().toISOString().slice(0,10)}.csv`, expCsv)
-}}
+  		download(`jobs-${new Date().toISOString().slice(0,10)}.csv`, jobsCsv)
+  		download(`expenses-${new Date().toISOString().slice(0,10)}.csv`, expCsv)
+		}}
           style={btn}
         >
           Export CSV
@@ -185,10 +185,16 @@ function JobsTab() {
   )
 }
 
-/* --------------- Expenses --------------- */
+
+/* --------------- Expenses (with OCR + business tick) --------------- */
+
+import Tesseract from 'tesseract.js' // add near top with other imports
+
+type ExpenseLine = { id: string; label: string; total: number; business: boolean }
 
 function ExpensesTab() {
   const [expenses, setExpenses] = useState<Expense[]>([])
+  const [items, setItems] = useState<ExpenseLine[]>([])
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
     merchant: '',
@@ -196,8 +202,64 @@ function ExpensesTab() {
     total: '0.00',
     business_portion: '0.00',
     note: '',
-    file: null as File | null
+    file: null as File | null,
+    previewUrl: '' as string
   })
+  const [processing, setProcessing] = useState(false)
+
+  function recomputeBusinessPortion(lines: ExpenseLine[]) {
+    const sum = lines.filter(l=>l.business).reduce((a,b)=>a + (Number(b.total)||0), 0)
+    setForm(f => ({ ...f, business_portion: String(sum.toFixed(2)) }))
+  }
+
+  function addManualItem() {
+    const next = [...items, { id: crypto.randomUUID(), label: 'Item', total: 0, business: true }]
+    setItems(next)
+    recomputeBusinessPortion(next)
+  }
+
+  function updateItem(id: string, patch: Partial<ExpenseLine>) {
+    const next = items.map(i => i.id === id ? { ...i, ...patch, total: patch.total !== undefined ? Number(patch.total) : i.total } : i)
+    setItems(next)
+    recomputeBusinessPortion(next)
+  }
+
+  async function handleFile(file: File) {
+    setProcessing(true)
+    try {
+      // preview
+      const purl = URL.createObjectURL(file)
+      setForm(f => ({ ...f, file, previewUrl: purl }))
+
+      // OCR
+      const { data } = await Tesseract.recognize(file, 'eng', { logger: () => {} })
+      const lines = (data.text || '')
+        .split(/\n+/)
+        .map(s => s.trim())
+        .filter(Boolean)
+
+      // simple heuristic: "label  12.34" at end of line
+      const parsed: ExpenseLine[] = []
+      for (const line of lines) {
+        const m = line.match(/(.+?)\s+(\d+[.,]\d{2})$/)
+        if (m) {
+          const label = m[1].replace(/[^a-zA-Z0-9 .,\-]/g, '').slice(0, 60)
+          const price = Number(m[2].replace(',', ''))
+          if (!Number.isNaN(price) && price < 1000) {
+            parsed.push({ id: crypto.randomUUID(), label, total: price, business: false })
+          }
+        }
+      }
+      setItems(parsed)
+      const totalGuess = parsed.reduce((a,b)=>a + (b.total||0), 0)
+      setForm(f => ({ ...f, total: String(totalGuess.toFixed(2)), business_portion: '0.00' }))
+    } catch (e) {
+      console.error(e)
+      alert('Could not read that receipt. You can still add items manually.')
+    } finally {
+      setProcessing(false)
+    }
+  }
 
   async function refresh() {
     try { setExpenses(await listExpenses()) } catch (e: any) { alert(e.message) }
@@ -206,33 +268,90 @@ function ExpensesTab() {
 
   async function save() {
     try {
+      // upload receipt (optional)
       let receipt_url: string | null = null
       if (form.file) {
         receipt_url = await uploadReceipt(form.file)
       }
+      const business_portion = Number(form.business_portion || 0) || items.filter(i=>i.business).reduce((a,b)=>a+b.total,0)
+      const total = Number(form.total || 0) || items.reduce((a,b)=>a+b.total,0)
+
       await addExpense({
         date: form.date,
         merchant: form.merchant,
         category: form.category,
-        total: Number(form.total),
-        business_portion: Number(form.business_portion || form.total),
+        total,
+        business_portion,
         note: form.note || null,
         receipt_url
       })
-      setForm({ ...form, merchant: '', total: '0.00', business_portion: '0.00', note: '', file: null })
+
+      // reset UI
+      setItems([])
+      setForm({
+        date: new Date().toISOString().slice(0, 10),
+        merchant: '',
+        category: 'Supplies',
+        total: '0.00',
+        business_portion: '0.00',
+        note: '',
+        file: null,
+        previewUrl: ''
+      })
       await refresh()
     } catch (e: any) { alert(e.message) }
   }
 
   return (
     <div>
-      <Panel title="Add expense">
-        <Row><label>Date</label><input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></Row>
-        <Row><label>Merchant</label><input value={form.merchant} onChange={e => setForm({ ...form, merchant: e.target.value })} placeholder="Tesco" /></Row>
-        <Row><label>Total (£)</label><input type="number" step="0.01" value={form.total} onChange={e => setForm({ ...form, total: e.target.value })} /></Row>
-        <Row><label>Business portion (£)</label><input type="number" step="0.01" value={form.business_portion} onChange={e => setForm({ ...form, business_portion: e.target.value })} /></Row>
-        <Row><label>Note</label><input value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} /></Row>
-        <Row><label>Receipt photo</label><input type="file" accept="image/*" onChange={e => setForm({ ...form, file: e.target.files?.[0] || null })} /></Row>
+      <Panel title="Add expense (with receipt OCR)">
+        <Row>
+          <label>Date</label>
+          <input type="date" value={form.date} onChange={e=>setForm({ ...form, date: e.target.value })} />
+        </Row>
+        <Row>
+          <label>Merchant</label>
+          <input value={form.merchant} onChange={e=>setForm({ ...form, merchant: e.target.value })} placeholder="Tesco" />
+        </Row>
+        <Row>
+          <label>Category</label>
+          <input value={form.category} onChange={e=>setForm({ ...form, category: e.target.value })} placeholder="Supplies" />
+        </Row>
+        <Row>
+          <label>Receipt</label>
+          <input type="file" accept="image/*" onChange={e => e.target.files && handleFile(e.target.files[0])} />
+        </Row>
+        {processing && <div style={{ color:'#555', margin:'6px 0' }}>Reading receipt… you can also add items manually below.</div>}
+        {form.previewUrl && <img src={form.previewUrl} alt="receipt" style={{ width: 200, height: 200, objectFit:'cover', border:'1px solid #ddd', borderRadius:6, margin:'6px 0' }} />}
+
+        <div style={{ fontWeight: 600, margin: '10px 0 6px' }}>Items (tick what is for business)</div>
+        <div style={{ display:'grid', gap:6, marginBottom:8 }}>
+          {items.length === 0 && <div style={{ color:'#777' }}>No items yet — add manually or upload a receipt.</div>}
+          {items.map(it => (
+            <div key={it.id} style={{ display:'grid', gridTemplateColumns:'1fr 120px 90px', alignItems:'center', gap:8 }}>
+              <input value={it.label} onChange={e=>updateItem(it.id, { label: e.target.value })} />
+              <input type="number" step="0.01" value={it.total} onChange={e=>updateItem(it.id, { total: Number(e.target.value) })} />
+              <label style={{ display:'flex', alignItems:'center', gap:6 }}>
+                <input type="checkbox" checked={it.business} onChange={e=>updateItem(it.id, { business: e.target.checked })} /> Business
+              </label>
+            </div>
+          ))}
+        </div>
+        <button onClick={addManualItem} style={{ ...btn, marginBottom: 12 }}>+ Add item</button>
+
+        <Row>
+          <label>Receipt total (£)</label>
+          <input type="number" step="0.01" value={form.total} onChange={e=>setForm({ ...form, total: e.target.value })} />
+        </Row>
+        <Row>
+          <label>Business portion (£)</label>
+          <input type="number" step="0.01" value={form.business_portion} onChange={e=>setForm({ ...form, business_portion: e.target.value })} />
+        </Row>
+        <Row>
+          <label>Note</label>
+          <input value={form.note} onChange={e=>setForm({ ...form, note: e.target.value })} />
+        </Row>
+
         <button onClick={save} style={btn}>Save expense</button>
         <button onClick={refresh} style={{ ...btn, marginLeft: 8 }}>Refresh list</button>
       </Panel>
@@ -246,6 +365,7 @@ function ExpensesTab() {
                 <b>{e.date}</b> — {e.merchant} — £{Number(e.total).toFixed(2)} (business £{Number(e.business_portion).toFixed(2)})
                 {e.note && <div style={{ color: '#555' }}>{e.note}</div>}
               </div>
+              {/* we still show saved receipt thumbnail (from Supabase public URL) */}
               {e.receipt_url && <img src={e.receipt_url} alt="receipt" style={{ width: 90, height: 90, objectFit: 'cover', borderRadius: 6, border: '1px solid #ddd' }} />}
             </li>
           ))}
