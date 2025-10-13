@@ -234,10 +234,9 @@ function ExpensesTab() {
 
 // load tesseract only when user picks a file
 	const Tesseract = (await import('tesseract.js')).default
-	const { data } = await Tesseract.recongize(file, 'eng', {logger: () => {} })
+	const { data } = await Tesseract.recognize(file, 'eng', {logger: () => {} })
 
       // OCR
-      const { data } = await Tesseract.recognize(file, 'eng', { logger: () => {} })
       const lines = (data.text || '')
         .split(/\n+/)
         .map(s => s.trim())
