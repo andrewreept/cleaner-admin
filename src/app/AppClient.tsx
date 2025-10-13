@@ -1,7 +1,9 @@
 'use client'
 
+const supabase = supabaseBrowser()
+
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
+mport { supabaseBrowser } from '../lib/supabase'
 import { Auth } from '@supabase/auth-ui-react'
 import { ThemeSupa } from '@supabase/auth-ui-shared'
 import { addJob, addExpense, listJobs, listExpenses, uploadReceipt, type Job, type Expense } from '../lib/data'
