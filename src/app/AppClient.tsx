@@ -1,21 +1,7 @@
-export default function AppClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-  if (!supabaseUrl || !supabaseKey) {
-    return (
-      <Center>
-        <div style={{maxWidth:560}}>
-          <h2 style={{fontSize:18, marginBottom:8}}>Missing environment variables</h2>
-          <div>Set <code>NEXT_PUBLIC_SUPABASE_URL</code> and <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in Vercel → Project → Settings → Environment Variables, then Redeploy.</div>
-        </div>
-      </Center>
-    )
-  }
-  // …rest of AppClient (unchanged)
-}
-
 'use client'
+
+  // …rest of AppClient (unchanged)
+
 
 import { useEffect, useState } from 'react'
 import Tesseract from 'tesseract.js'
@@ -35,6 +21,21 @@ import {
   yearKey,
   toCSV,
 } from '../lib/data'
+
+export default function AppClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (!supabaseUrl || !supabaseKey) {
+    return (
+      <Center>
+        <div style={{maxWidth:560}}>
+          <h2 style={{fontSize:18, marginBottom:8}}>Missing environment variables</h2>
+          <div>Set <code>NEXT_PUBLIC_SUPABASE_URL</code> and <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in Vercel → Project → Settings → Environment Variables, then Redeploy.</div>
+        </div>
+      </Center>
+    )
+  }
 
 function Masked(s?: string) {
  if (!s) return 'MISSING'
