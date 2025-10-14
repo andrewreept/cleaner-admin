@@ -1,10 +1,6 @@
 'use client'
 
-  // …rest of AppClient (unchanged)
-
-
 import { useEffect, useState } from 'react'
-import Tesseract from 'tesseract.js'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseBrowser } from '../lib/supabase'
 import { Auth } from '@supabase/auth-ui-react'
@@ -22,27 +18,26 @@ import {
   toCSV,
 } from '../lib/data'
 
+/* ---------------- Root Client Component ---------------- */
+
 export default function AppClient() {
+  // show a clear message on live if env vars are missing
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
   if (!supabaseUrl || !supabaseKey) {
     return (
       <Center>
-        <div style={{maxWidth:560}}>
-          <h2 style={{fontSize:18, marginBottom:8}}>Missing environment variables</h2>
-          <div>Set <code>NEXT_PUBLIC_SUPABASE_URL</code> and <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in Vercel → Project → Settings → Environment Variables, then Redeploy.</div>
+        <div style={{ maxWidth: 560 }}>
+          <h2 style={{ fontSize: 18, marginBottom: 8 }}>Missing environment variables</h2>
+          <div>
+            Set <code>NEXT_PUBLIC_SUPABASE_URL</code> and <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in
+            Vercel → Project → Settings → Environment Variables, then redeploy.
+          </div>
         </div>
       </Center>
     )
   }
 
-function Masked(s?: string) {
- if (!s) return 'MISSING'
- // show first 6 chars and lenght only
- return `${s.slice(0, 6)}...(len=${s.lenght})`
-
-export default function AppClient() {
   const [supabase, setSupabase] = useState<SupabaseClient | null>(null)
   const [session, setSession] = useState<any>(null)
 
@@ -72,6 +67,8 @@ export default function AppClient() {
   return <Home supabase={supabase} />
 }
 
+/* ---------------- Home Shell ---------------- */
+
 function Home({ supabase }: { supabase: SupabaseClient }) {
   const [tab, setTab] = useState<'jobs' | 'expenses'>('jobs')
 
@@ -90,15 +87,13 @@ function Home({ supabase }: { supabase: SupabaseClient }) {
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         <button
-        onClick={async () => {
- 		 const [jobs, expenses] = await Promise.all([listJobs(), listExpenses()])
-
-  		const jobsCsv = toCSV(jobs)
-  		const expCsv  = toCSV(expenses)
-
-  		download(`jobs-${new Date().toISOString().slice(0,10)}.csv`, jobsCsv)
-  		download(`expenses-${new Date().toISOString().slice(0,10)}.csv`, expCsv)
-		}}
+          onClick={async () => {
+            const [jobs, expenses] = await Promise.all([listJobs(), listExpenses()])
+            const jobsCsv = toCSV(jobs)
+            const expCsv  = toCSV(expenses)
+            download(`jobs-${new Date().toISOString().slice(0,10)}.csv`, jobsCsv)
+            download(`expenses-${new Date().toISOString().slice(0,10)}.csv`, expCsv)
+          }}
           style={btn}
         >
           Export CSV
@@ -209,10 +204,7 @@ function JobsTab() {
   )
 }
 
-
-/* --------------- Expenses (with OCR + business tick) --------------- */
-
- // add near top with other imports
+/* ---------------- Expenses (with OCR + business tick) ---------------- */
 
 type ExpenseLine = { id: string; label: string; total: number; business: boolean }
 
@@ -255,11 +247,10 @@ function ExpensesTab() {
       const purl = URL.createObjectURL(file)
       setForm(f => ({ ...f, file, previewUrl: purl }))
 
-// load tesseract only when user picks a file
-	const Tesseract = (await import('tesseract.js')).default
-	const { data } = await Tesseract.recognize(file, 'eng', {logger: () => {} })
+      // load tesseract only when user picks a file
+      const Tesseract = (await import('tesseract.js')).default
+      const { data } = await Tesseract.recognize(file, 'eng', { logger: () => {} })
 
-      // OCR
       const lines = (data.text || '')
         .split(/\n+/)
         .map(s => s.trim())
@@ -392,7 +383,6 @@ function ExpensesTab() {
                 <b>{e.date}</b> — {e.merchant} — £{Number(e.total).toFixed(2)} (business £{Number(e.business_portion).toFixed(2)})
                 {e.note && <div style={{ color: '#555' }}>{e.note}</div>}
               </div>
-              {/* we still show saved receipt thumbnail (from Supabase public URL) */}
               {e.receipt_url && <img src={e.receipt_url} alt="receipt" style={{ width: 90, height: 90, objectFit: 'cover', borderRadius: 6, border: '1px solid #ddd' }} />}
             </li>
           ))}
@@ -402,7 +392,7 @@ function ExpensesTab() {
   )
 }
 
-/* --------------- Shared UI bits --------------- */
+/* ---------------- Shared UI bits ---------------- */
 
 function Center({ children }: any) {
   return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>{children}</div>
