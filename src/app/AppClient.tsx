@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseBrowser } from '../lib/supabase'
 import { Auth } from '@supabase/auth-ui-react'
 import { ThemeSupa } from '@supabase/auth-ui-shared'
+import type { Settings } from '../lib/data'
 import {
   addJob,
   addExpense,
@@ -131,7 +132,7 @@ async function handleSaveSettings(patch: Partial<Settings>) {
 
 /* ---------------- Dashboard (totals) ---------------- */
 
-function Dashboard({ settings }: { settings: Settings | null }) {
+function Dashboard({ settings }: { settings?: Settings | null }) {
   const [jobs, setJobs] = useState<Job[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])
   useEffect(() => { listJobs().then(setJobs).catch(e=>alert(e.message)); listExpenses().then(setExpenses).catch(e=>alert(e.message)) }, [])
