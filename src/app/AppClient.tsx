@@ -16,6 +16,9 @@ import {
   monthKey,
   yearKey,
   toCSV,
+  getSettings,
+  saveSettings,
+  type Settings,
 } from '../lib/data'
 
 /* ---------------- Root Client Component ---------------- */
@@ -70,18 +73,36 @@ export default function AppClient() {
 /* ---------------- Home Shell ---------------- */
 
 function Home({ supabase }: { supabase: SupabaseClient }) {
-  const [tab, setTab] = useState<'jobs' | 'expenses'>('jobs')
+  const [tab, setTab] = useState<'dashboard' | 'jobs' | 'expenses' | 'settings'>('dashboard')
+
+
+const [settings, setSettingsState] = useState<Settings | null>(null)
+
+useEffect(() => {
+  getSettings().then(setSettingsState).catch(e => alert(e.message))
+}, [])
+
+async function handleSaveSettings(patch: Partial<Settings>) {
+  try {
+    await saveSettings(patch)
+    const fresh = await getSettings()
+    setSettingsState(fresh)
+    alert('Settings saved')
+  } catch (e: any) { alert(e.message) }
+}
 
   return (
     <div style={{ padding: 20, maxWidth: 900, margin: '0 auto' }}>
       <h1 style={{ fontSize: 22, marginBottom: 12 }}>Cleaner Admin</h1>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <button onClick={() => setTab('jobs')} style={tabBtn(tab === 'jobs')}>Jobs</button>
-        <button onClick={() => setTab('expenses')} style={tabBtn(tab === 'expenses')}>Expenses</button>
-        <div style={{ flex: 1 }} />
-        <button onClick={() => supabase.auth.signOut()} style={btn}>Sign out</button>
-      </div>
+  <button onClick={() => setTab('dashboard')} style={tabBtn(tab === 'dashboard')}>Dashboard</button>
+  <button onClick={() => setTab('jobs')} style={tabBtn(tab === 'jobs')}>Jobs</button>
+  <button onClick={() => setTab('expenses')} style={tabBtn(tab === 'expenses')}>Expenses</button>
+  <button onClick={() => setTab('settings')} style={tabBtn(tab === 'settings')}>Settings</button>
+  <div style={{ flex: 1 }} />
+  <button onClick={() => supabase.auth.signOut()} style={btn}>Sign out</button>
+</div>
 
       <Dashboard />
 
@@ -100,17 +121,22 @@ function Home({ supabase }: { supabase: SupabaseClient }) {
         </button>
       </div>
 
-      {tab === 'jobs' ? <JobsTab /> : <ExpensesTab />}
+      {tab === 'dashboard' && <Dashboard settings={settings} />}
+      {tab === 'jobs' && <JobsTab />}
+      {tab === 'expenses' && <ExpensesTab />}
+      {tab === 'settings' && <SettingsTab settings={settings} onSave={handleSaveSettings} />}
     </div>
   )
 }
 
 /* ---------------- Dashboard (totals) ---------------- */
 
-function Dashboard() {
+function Dashboard({ settings }: { settings: Settings | null }) {
   const [jobs, setJobs] = useState<Job[]>([])
-  useEffect(() => { listJobs().then(setJobs).catch(e=>alert(e.message)) }, [])
+  const [expenses, setExpenses] = useState<Expense[]>([])
+  useEffect(() => { listJobs().then(setJobs).catch(e=>alert(e.message)); listExpenses().then(setExpenses).catch(e=>alert(e.message)) }, [])
 
+  const currency = settings?.currency || 'GBP'
   const today = new Date().toISOString().slice(0,10)
   const mkey = monthKey(today)
   const ykey = yearKey(today)
@@ -118,20 +144,96 @@ function Dashboard() {
   const monthIncome = jobs.filter(j => monthKey(j.date) === mkey).reduce((a,b)=>a+Number(b.amount),0)
   const yearIncome  = jobs.filter(j => yearKey(j.date) === ykey).reduce((a,b)=>a+Number(b.amount),0)
 
-  const MONTH_LIMIT = 1000   // tweak later or add Settings
-  const YEAR_LIMIT  = 12000
+  const monthLimit = Number(settings?.monthly_income_limit || 0)
+  const yearLimit  = Number(settings?.annual_income_limit || 0)
+  const warnAt     = Number(settings?.warn_at_percent || 80)
+
+  const monthPct = monthLimit ? Math.round((monthIncome / monthLimit) * 100) : 0
+  const yearPct  = yearLimit  ? Math.round((yearIncome  / yearLimit)  * 100) : 0
 
   return (
-    <div style={{ border: '1px solid #ddd', borderRadius: 10, padding: 12, marginBottom: 16 }}>
-      <div style={{ fontWeight: 600, marginBottom: 8 }}>At a glance</div>
-      <div>Income this month: <b>£{monthIncome.toFixed(2)}</b>{MONTH_LIMIT ? ` / £${MONTH_LIMIT}` : ''}</div>
-      <div>Income this year:  <b>£{yearIncome.toFixed(2)}</b>{YEAR_LIMIT ? ` / £${YEAR_LIMIT}` : ''}</div>
-      {(MONTH_LIMIT && monthIncome >= MONTH_LIMIT*0.8) && (
-        <div style={{ color: '#b45309', marginTop: 6 }}>Heads up: you’re over 80% of your monthly threshold.</div>
-      )}
-      {(YEAR_LIMIT && yearIncome >= YEAR_LIMIT*0.8) && (
-        <div style={{ color: '#b45309', marginTop: 4 }}>Heads up: you’re over 80% of your annual threshold.</div>
-      )}
+    <div>
+      <Panel title="At a glance">
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+          <div>
+            <div>Income this month: <b>£{monthIncome.toFixed(2)}</b>{monthLimit ? ` / £${monthLimit}` : ''}</div>
+            {monthLimit > 0 && <div style={{ height:8, background:'#eee', borderRadius:6, marginTop:6 }}>
+              <div style={{ width: `${Math.min(100, monthPct)}%`, height:'100%', background:'#3b82f6', borderRadius:6 }} />
+            </div>}
+            {monthLimit > 0 && monthPct >= warnAt && (
+              <div style={{ color:'#b45309', marginTop:6 }}>Heads up: {monthPct}% of monthly threshold.</div>
+            )}
+          </div>
+          <div>
+            <div>Income this year: <b>£{yearIncome.toFixed(2)}</b>{yearLimit ? ` / £${yearLimit}` : ''}</div>
+            {yearLimit > 0 && <div style={{ height:8, background:'#eee', borderRadius:6, marginTop:6 }}>
+              <div style={{ width: `${Math.min(100, yearPct)}%`, height:'100%', background:'#10b981', borderRadius:6 }} />
+            </div>}
+            {yearLimit > 0 && yearPct >= warnAt && (
+              <div style={{ color:'#b45309', marginTop:6 }}>Heads up: {yearPct}% of annual threshold.</div>
+            )}
+          </div>
+        </div>
+      </Panel>
+
+      <Panel title="Quick add">
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+          <QuickAddJob currency={currency} />
+          <QuickAddExpense currency={currency} />
+        </div>
+      </Panel>
+    </div>
+  )
+}
+
+function QuickAddJob({ currency }: { currency: string }) {
+  const [client, setClient] = useState(''), [amount, setAmount] = useState('')
+  async function add() {
+    if (!client || !amount) return
+    try {
+      await addJob({ date: new Date().toISOString().slice(0,10), client, description: null, amount: Number(amount), paid: true, method: 'cash' })
+      setClient(''); setAmount('')
+      alert('Job added')
+    } catch (e:any) { alert(e.message) }
+  }
+  return (
+    <div>
+      <div style={{ fontWeight:600, marginBottom:6 }}>New job</div>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr auto', gap:8 }}>
+        <input placeholder="Client" value={client} onChange={e=>setClient(e.target.value)} />
+        <input type="number" step="0.01" placeholder={`Amount (${currency})`} value={amount} onChange={e=>setAmount(e.target.value)} />
+        <button onClick={add} style={btn}>Add</button>
+      </div>
+    </div>
+  )
+}
+
+function QuickAddExpense({ currency }: { currency: string }) {
+  const [merchant, setMerchant] = useState(''), [amount, setAmount] = useState('')
+  async function add() {
+    if (!merchant || !amount) return
+    try {
+      await addExpense({
+        date: new Date().toISOString().slice(0,10),
+        merchant,
+        category: 'Supplies',
+        total: Number(amount),
+        business_portion: Number(amount),
+        note: null,
+        receipt_url: null
+      })
+      setMerchant(''); setAmount('')
+      alert('Expense added')
+    } catch (e:any) { alert(e.message) }
+  }
+  return (
+    <div>
+      <div style={{ fontWeight:600, marginBottom:6 }}>New expense</div>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr auto', gap:8 }}>
+        <input placeholder="Merchant" value={merchant} onChange={e=>setMerchant(e.target.value)} />
+        <input type="number" step="0.01" placeholder={`Amount (${currency})`} value={amount} onChange={e=>setAmount(e.target.value)} />
+        <button onClick={add} style={btn}>Add</button>
+      </div>
     </div>
   )
 }
@@ -201,6 +303,54 @@ function JobsTab() {
         </ul>
       </Panel>
     </div>
+  )
+}
+
+/*-----------------Settings tab UI ------------------------------------*/
+function SettingsTab({ settings, onSave }: { settings: Settings | null, onSave: (patch: Partial<Settings>) => Promise<void> }) {
+  const [form, setForm] = useState({
+    monthly_income_limit: settings?.monthly_income_limit ?? 0,
+    annual_income_limit:  settings?.annual_income_limit  ?? 0,
+    warn_at_percent:      settings?.warn_at_percent      ?? 80,
+    currency:             settings?.currency             ?? 'GBP',
+  })
+
+  useEffect(() => {
+    if (!settings) return
+    setForm({
+      monthly_income_limit: settings.monthly_income_limit,
+      annual_income_limit:  settings.annual_income_limit,
+      warn_at_percent:      settings.warn_at_percent,
+      currency:             settings.currency,
+    })
+  }, [settings])
+
+  return (
+    <Panel title="Settings">
+      {!settings && <div>Loading settings…</div>}
+      {settings && (
+        <div style={{ display:'grid', gap:10, maxWidth:420 }}>
+          <label>Monthly income threshold (£)
+            <input type="number" step="0.01" value={form.monthly_income_limit}
+              onChange={e=>setForm({ ...form, monthly_income_limit: Number(e.target.value) })} />
+          </label>
+          <label>Annual income threshold (£)
+            <input type="number" step="0.01" value={form.annual_income_limit}
+              onChange={e=>setForm({ ...form, annual_income_limit: Number(e.target.value) })} />
+          </label>
+          <label>Warn at (%)
+            <input type="number" value={form.warn_at_percent}
+              onChange={e=>setForm({ ...form, warn_at_percent: Number(e.target.value) })} />
+          </label>
+          <label>Currency
+            <input value={form.currency} onChange={e=>setForm({ ...form, currency: e.target.value })} />
+          </label>
+          <div>
+            <button style={btn} onClick={()=>onSave(form)}>Save</button>
+          </div>
+        </div>
+      )}
+    </Panel>
   )
 }
 
