@@ -20,6 +20,10 @@ export type Job = {
   amount: number
   paid: boolean
   method: string | null
+  monthly_income_limit: number
+  annual_income_limit: number
+  warn_at_percent: number
+  currency: string
 }
 
 export type Expense = {
@@ -91,4 +95,49 @@ export function toCSV<T extends Record<string, any>>(rows: T[]) {
     ...rows.map(r => headers.map(h => JSON.stringify(r[h] ?? '')).join(',')),
   ]
   return lines.join('\n')
+}
+
+/*--------DATA HELPERS:LOAD & SAVE SETTINGS-------*/
+export async function getSettings(): Promise<Settings> {
+  const uid = await currentUserId()
+
+  // Try to read first
+  const { data, error } = await sb()
+    .from('settings')
+    .select('*')
+    .eq('user_id', uid)
+    .single()
+
+  // If found, return it
+  if (!error && data) return data as Settings
+
+  // If not found, create (but be safe if another call does it in parallel)
+  const defaults: Settings = {
+    user_id: uid,
+    monthly_income_limit: 0,
+    annual_income_limit: 0,
+    warn_at_percent: 80,
+    currency: 'GBP',
+  }
+
+  // UPSERT prevents "duplicate key" when row already exists
+  const { data: upserted, error: upErr } = await sb()
+    .from('settings')
+    .upsert(defaults, { onConflict: 'user_id' })
+    .select()
+    .single()
+
+  if (upErr) throw upErr
+  return upserted as Settings
+}
+
+export async function saveSettings(patch: Partial<Settings>): Promise<void> {
+  const uid = await currentUserId()
+  const payload = { user_id: uid, ...patch, updated_at: new Date().toISOString() }
+
+  const { error } = await sb()
+    .from('settings')
+    .upsert(payload, { onConflict: 'user_id' })
+
+  if (error) throw error
 }
