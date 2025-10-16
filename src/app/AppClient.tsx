@@ -5,7 +5,6 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseBrowser } from '../lib/supabase'
 import { Auth } from '@supabase/auth-ui-react'
 import { ThemeSupa } from '@supabase/auth-ui-shared'
-import type { Settings } from '../lib/data'
 import {
   addJob,
   addExpense,
@@ -25,7 +24,7 @@ import {
 /* ---------------- Root Client Component ---------------- */
 
 export default function AppClient() {
-  // show a clear message on live if env vars are missing
+  // Show a clear message on live if env vars are missing
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!supabaseUrl || !supabaseKey) {
@@ -45,7 +44,7 @@ export default function AppClient() {
   const [supabase, setSupabase] = useState<SupabaseClient | null>(null)
   const [session, setSession] = useState<any>(null)
 
-  // init Supabase in the browser only
+  // Init Supabase in the browser only
   useEffect(() => {
     const sb = getSupabaseBrowser()
     if (!sb) return
@@ -75,39 +74,40 @@ export default function AppClient() {
 
 function Home({ supabase }: { supabase: SupabaseClient }) {
   const [tab, setTab] = useState<'dashboard' | 'jobs' | 'expenses' | 'settings'>('dashboard')
+  const [settings, setSettings] = useState<Settings | null>(null)
 
+  useEffect(() => {
+    getSettings().then(setSettings).catch(e => alert(e.message))
+  }, [])
 
-const [settings, setSettingsState] = useState<Settings | null>(null)
-
-useEffect(() => {
-  getSettings().then(setSettingsState).catch(e => alert(e.message))
-}, [])
-
-async function handleSaveSettings(patch: Partial<Settings>) {
-  try {
-    await saveSettings(patch)
-    const fresh = await getSettings()
-    setSettingsState(fresh)
-    alert('Settings saved')
-  } catch (e: any) { alert(e.message) }
-}
+  async function handleSaveSettings(patch: Partial<Settings>) {
+    try {
+      await saveSettings(patch)
+      const fresh = await getSettings()
+      setSettings(fresh)
+      alert('Settings saved')
+    } catch (e: any) { alert(e.message) }
+  }
 
   return (
-    <div style={{ padding: 20, maxWidth: 900, margin: '0 auto' }}>
+    <div style={{ padding: 20, maxWidth: 1000, margin: '0 auto' }}>
       <h1 style={{ fontSize: 22, marginBottom: 12 }}>Cleaner Admin</h1>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-  <button onClick={() => setTab('dashboard')} style={tabBtn(tab === 'dashboard')}>Dashboard</button>
-  <button onClick={() => setTab('jobs')} style={tabBtn(tab === 'jobs')}>Jobs</button>
-  <button onClick={() => setTab('expenses')} style={tabBtn(tab === 'expenses')}>Expenses</button>
-  <button onClick={() => setTab('settings')} style={tabBtn(tab === 'settings')}>Settings</button>
-  <div style={{ flex: 1 }} />
-  <button onClick={() => supabase.auth.signOut()} style={btn}>Sign out</button>
-</div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        <button onClick={() => setTab('dashboard')} style={tabBtn(tab === 'dashboard')}>Dashboard</button>
+        <button onClick={() => setTab('jobs')} style={tabBtn(tab === 'jobs')}>Jobs</button>
+        <button onClick={() => setTab('expenses')} style={tabBtn(tab === 'expenses')}>Expenses</button>
+        <button onClick={() => setTab('settings')} style={tabBtn(tab === 'settings')}>Settings</button>
+        <div style={{ flex: 1 }} />
+        <button onClick={() => supabase.auth.signOut()} style={btn}>Sign out</button>
+      </div>
 
-      <Dashboard />
+      {tab === 'dashboard' && <Dashboard settings={settings} />}
+      {tab === 'jobs' && <JobsTab />}
+      {tab === 'expenses' && <ExpensesTab />}
+      {tab === 'settings' && <SettingsTab settings={settings} onSave={handleSaveSettings} />}
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
         <button
           onClick={async () => {
             const [jobs, expenses] = await Promise.all([listJobs(), listExpenses()])
@@ -118,24 +118,23 @@ async function handleSaveSettings(patch: Partial<Settings>) {
           }}
           style={btn}
         >
-          Export CSV
+          Export CSV (2 files)
         </button>
       </div>
-
-      {tab === 'dashboard' && <Dashboard settings={settings} />}
-      {tab === 'jobs' && <JobsTab />}
-      {tab === 'expenses' && <ExpensesTab />}
-      {tab === 'settings' && <SettingsTab settings={settings} onSave={handleSaveSettings} />}
     </div>
   )
 }
 
-/* ---------------- Dashboard (totals) ---------------- */
+/* ---------------- Dashboard (totals + quick add) ---------------- */
 
-function Dashboard({ settings }: { settings?: Settings | null }) {
+function Dashboard({ settings }: { settings: Settings | null }) {
   const [jobs, setJobs] = useState<Job[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])
-  useEffect(() => { listJobs().then(setJobs).catch(e=>alert(e.message)); listExpenses().then(setExpenses).catch(e=>alert(e.message)) }, [])
+
+  useEffect(() => {
+    listJobs().then(setJobs).catch(e=>alert(e.message))
+    listExpenses().then(setExpenses).catch(e=>alert(e.message))
+  }, [])
 
   const currency = settings?.currency || 'GBP'
   const today = new Date().toISOString().slice(0,10)
@@ -149,8 +148,8 @@ function Dashboard({ settings }: { settings?: Settings | null }) {
   const yearLimit  = Number(settings?.annual_income_limit || 0)
   const warnAt     = Number(settings?.warn_at_percent || 80)
 
-  const monthPct = monthLimit ? Math.round((monthIncome / monthLimit) * 100) : 0
-  const yearPct  = yearLimit  ? Math.round((yearIncome  / yearLimit)  * 100) : 0
+  const monthPct = monthLimit ? Math.min(100, Math.round((monthIncome / monthLimit) * 100)) : 0
+  const yearPct  = yearLimit  ? Math.min(100, Math.round((yearIncome  / yearLimit)  * 100)) : 0
 
   return (
     <div>
@@ -158,18 +157,14 @@ function Dashboard({ settings }: { settings?: Settings | null }) {
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
           <div>
             <div>Income this month: <b>£{monthIncome.toFixed(2)}</b>{monthLimit ? ` / £${monthLimit}` : ''}</div>
-            {monthLimit > 0 && <div style={{ height:8, background:'#eee', borderRadius:6, marginTop:6 }}>
-              <div style={{ width: `${Math.min(100, monthPct)}%`, height:'100%', background:'#3b82f6', borderRadius:6 }} />
-            </div>}
+            {monthLimit > 0 && <Bar value={monthPct} color="#3b82f6" />}
             {monthLimit > 0 && monthPct >= warnAt && (
               <div style={{ color:'#b45309', marginTop:6 }}>Heads up: {monthPct}% of monthly threshold.</div>
             )}
           </div>
           <div>
             <div>Income this year: <b>£{yearIncome.toFixed(2)}</b>{yearLimit ? ` / £${yearLimit}` : ''}</div>
-            {yearLimit > 0 && <div style={{ height:8, background:'#eee', borderRadius:6, marginTop:6 }}>
-              <div style={{ width: `${Math.min(100, yearPct)}%`, height:'100%', background:'#10b981', borderRadius:6 }} />
-            </div>}
+            {yearLimit > 0 && <Bar value={yearPct} color="#10b981" />}
             {yearLimit > 0 && yearPct >= warnAt && (
               <div style={{ color:'#b45309', marginTop:6 }}>Heads up: {yearPct}% of annual threshold.</div>
             )}
@@ -187,8 +182,17 @@ function Dashboard({ settings }: { settings?: Settings | null }) {
   )
 }
 
+function Bar({ value, color }: { value: number, color: string }) {
+  return (
+    <div style={{ height:8, background:'#eee', borderRadius:6, marginTop:6 }}>
+      <div style={{ width: `${value}%`, height:'100%', background: color, borderRadius:6 }} />
+    </div>
+  )
+}
+
 function QuickAddJob({ currency }: { currency: string }) {
-  const [client, setClient] = useState(''), [amount, setAmount] = useState('')
+  const [client, setClient] = useState('')
+  const [amount, setAmount] = useState('')
   async function add() {
     if (!client || !amount) return
     try {
@@ -210,7 +214,8 @@ function QuickAddJob({ currency }: { currency: string }) {
 }
 
 function QuickAddExpense({ currency }: { currency: string }) {
-  const [merchant, setMerchant] = useState(''), [amount, setAmount] = useState('')
+  const [merchant, setMerchant] = useState('')
+  const [amount, setAmount] = useState('')
   async function add() {
     if (!merchant || !amount) return
     try {
@@ -221,7 +226,7 @@ function QuickAddExpense({ currency }: { currency: string }) {
         total: Number(amount),
         business_portion: Number(amount),
         note: null,
-        receipt_url: null
+        receipt_url: null,
       })
       setMerchant(''); setAmount('')
       alert('Expense added')
@@ -307,54 +312,6 @@ function JobsTab() {
   )
 }
 
-/*-----------------Settings tab UI ------------------------------------*/
-function SettingsTab({ settings, onSave }: { settings: Settings | null, onSave: (patch: Partial<Settings>) => Promise<void> }) {
-  const [form, setForm] = useState({
-    monthly_income_limit: settings?.monthly_income_limit ?? 0,
-    annual_income_limit:  settings?.annual_income_limit  ?? 0,
-    warn_at_percent:      settings?.warn_at_percent      ?? 80,
-    currency:             settings?.currency             ?? 'GBP',
-  })
-
-  useEffect(() => {
-    if (!settings) return
-    setForm({
-      monthly_income_limit: settings.monthly_income_limit,
-      annual_income_limit:  settings.annual_income_limit,
-      warn_at_percent:      settings.warn_at_percent,
-      currency:             settings.currency,
-    })
-  }, [settings])
-
-  return (
-    <Panel title="Settings">
-      {!settings && <div>Loading settings…</div>}
-      {settings && (
-        <div style={{ display:'grid', gap:10, maxWidth:420 }}>
-          <label>Monthly income threshold (£)
-            <input type="number" step="0.01" value={form.monthly_income_limit}
-              onChange={e=>setForm({ ...form, monthly_income_limit: Number(e.target.value) })} />
-          </label>
-          <label>Annual income threshold (£)
-            <input type="number" step="0.01" value={form.annual_income_limit}
-              onChange={e=>setForm({ ...form, annual_income_limit: Number(e.target.value) })} />
-          </label>
-          <label>Warn at (%)
-            <input type="number" value={form.warn_at_percent}
-              onChange={e=>setForm({ ...form, warn_at_percent: Number(e.target.value) })} />
-          </label>
-          <label>Currency
-            <input value={form.currency} onChange={e=>setForm({ ...form, currency: e.target.value })} />
-          </label>
-          <div>
-            <button style={btn} onClick={()=>onSave(form)}>Save</button>
-          </div>
-        </div>
-      )}
-    </Panel>
-  )
-}
-
 /* ---------------- Expenses (with OCR + business tick) ---------------- */
 
 type ExpenseLine = { id: string; label: string; total: number; business: boolean }
@@ -391,44 +348,87 @@ function ExpensesTab() {
     recomputeBusinessPortion(next)
   }
 
-  async function handleFile(file: File) {
-    setProcessing(true)
-    try {
-      // preview
-      const purl = URL.createObjectURL(file)
-      setForm(f => ({ ...f, file, previewUrl: purl }))
+function fileToCanvas(file: File, maxDim = 2000): Promise<HTMLCanvasElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      const { width, height } = fitWithin(img.width, img.height, maxDim)
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')!
+      ctx.fillStyle = '#fff' // receipts are often low contrast; white bg helps
+      ctx.fillRect(0, 0, width, height)
+      ctx.drawImage(img, 0, 0, width, height)
+      resolve(canvas)
+    }
+    img.onerror = reject
+    img.src = URL.createObjectURL(file)
+  })
+}
 
-      // load tesseract only when user picks a file
-      const Tesseract = (await import('tesseract.js')).default
-      const { data } = await Tesseract.recognize(file, 'eng', { logger: () => {} })
+function fitWithin(w: number, h: number, max: number) {
+  const scale = Math.min(1, max / Math.max(w, h))
+  return { width: Math.round(w * scale), height: Math.round(h * scale) }
+}
 
-      const lines = (data.text || '')
-        .split(/\n+/)
-        .map(s => s.trim())
-        .filter(Boolean)
+ async function handleFile(file: File) {
+  setProcessing(true)
+  try {
+    // Preview for the UI
+    const purl = URL.createObjectURL(file)
+    setForm(f => ({ ...f, file, previewUrl: purl }))
 
-      // simple heuristic: "label  12.34" at end of line
-      const parsed: ExpenseLine[] = []
-      for (const line of lines) {
-        const m = line.match(/(.+?)\s+(\d+[.,]\d{2})$/)
-        if (m) {
-          const label = m[1].replace(/[^a-zA-Z0-9 .,\-]/g, '').slice(0, 60)
-          const price = Number(m[2].replace(',', ''))
-          if (!Number.isNaN(price) && price < 1000) {
-            parsed.push({ id: crypto.randomUUID(), label, total: price, business: false })
-          }
+    // 1) Resize the image so OCR is faster & more reliable (~max 2000px)
+    const canvas = await fileToCanvas(file, 2000)
+
+    // 2) Load Tesseract only when needed
+    const Tesseract = (await import('tesseract.js')).default
+
+    // 3) Use CDN paths so worker/wasm always resolve in Next.js
+    const cdn = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist'
+    const { data } = await Tesseract.recognize(canvas, 'eng', {
+      workerPath: `${cdn}/worker.min.js`,
+      corePath:   `${cdn}/tesseract-core.wasm.js`,
+      langPath:   `${cdn}/lang`,
+      logger:     (m: any) => console.log('[ocr]', m),
+      // Optional: slightly better for “one line per item” receipts:
+      //   6 = Assume a single uniform block of text
+      //   3 = Fully automatic page segmentation
+      //   4 = Single column of text of variable sizes
+      // Try 6 or 4 if results are strange.
+      // @ts-ignore – Tesseract options typing is loose
+      tessedit_pageseg_mode: 6,
+    })
+
+    const lines = (data.text || '')
+      .split(/\n+/)
+      .map(s => s.trim())
+      .filter(Boolean)
+
+    const parsed: ExpenseLine[] = []
+    for (const line of lines) {
+      // Heuristic: "label ... 12.34" at end of line
+      const m = line.match(/(.+?)\s+(\d+[.,]\d{2})$/)
+      if (m) {
+        const label = m[1].replace(/[^a-zA-Z0-9 .,\-]/g, '').slice(0, 60)
+        const price = Number(m[2].replace(',', ''))
+        if (!Number.isNaN(price) && price < 1000) {
+          parsed.push({ id: crypto.randomUUID(), label, total: price, business: false })
         }
       }
-      setItems(parsed)
-      const totalGuess = parsed.reduce((a,b)=>a + (b.total||0), 0)
-      setForm(f => ({ ...f, total: String(totalGuess.toFixed(2)), business_portion: '0.00' }))
-    } catch (e) {
-      console.error(e)
-      alert('Could not read that receipt. You can still add items manually.')
-    } finally {
-      setProcessing(false)
     }
+
+    setItems(parsed)
+    const totalGuess = parsed.reduce((a,b)=>a + (b.total||0), 0)
+    setForm(f => ({ ...f, total: String(totalGuess.toFixed(2)), business_portion: '0.00' }))
+  } catch (e) {
+    console.error('[ocr error]', e)
+    alert('Could not read that receipt. You can still add items manually.')
+  } finally {
+    setProcessing(false)
   }
+}
 
   async function refresh() {
     try { setExpenses(await listExpenses()) } catch (e: any) { alert(e.message) }
@@ -497,7 +497,7 @@ function ExpensesTab() {
         <div style={{ display:'grid', gap:6, marginBottom:8 }}>
           {items.length === 0 && <div style={{ color:'#777' }}>No items yet — add manually or upload a receipt.</div>}
           {items.map(it => (
-            <div key={it.id} style={{ display:'grid', gridTemplateColumns:'1fr 120px 90px', alignItems:'center', gap:8 }}>
+            <div key={it.id} style={{ display:'grid', gridTemplateColumns:'1fr 120px 120px', alignItems:'center', gap:8 }}>
               <input value={it.label} onChange={e=>updateItem(it.id, { label: e.target.value })} />
               <input type="number" step="0.01" value={it.total} onChange={e=>updateItem(it.id, { total: Number(e.target.value) })} />
               <label style={{ display:'flex', alignItems:'center', gap:6 }}>
@@ -543,6 +543,55 @@ function ExpensesTab() {
   )
 }
 
+/* ---------------- Settings ---------------- */
+
+function SettingsTab({ settings, onSave }: { settings: Settings | null, onSave: (patch: Partial<Settings>) => Promise<void> }) {
+  const [form, setForm] = useState({
+    monthly_income_limit: settings?.monthly_income_limit ?? 0,
+    annual_income_limit:  settings?.annual_income_limit  ?? 0,
+    warn_at_percent:      settings?.warn_at_percent      ?? 80,
+    currency:             settings?.currency             ?? 'GBP',
+  })
+
+  useEffect(() => {
+    if (!settings) return
+    setForm({
+      monthly_income_limit: settings.monthly_income_limit,
+      annual_income_limit:  settings.annual_income_limit,
+      warn_at_percent:      settings.warn_at_percent,
+      currency:             settings.currency,
+    })
+  }, [settings])
+
+  return (
+    <Panel title="Settings">
+      {!settings && <div>Loading settings…</div>}
+      {settings && (
+        <div style={{ display:'grid', gap:10, maxWidth:420 }}>
+          <label>Monthly income threshold (£)
+            <input type="number" step="0.01" value={form.monthly_income_limit}
+              onChange={e=>setForm({ ...form, monthly_income_limit: Number(e.target.value) })} />
+          </label>
+          <label>Annual income threshold (£)
+            <input type="number" step="0.01" value={form.annual_income_limit}
+              onChange={e=>setForm({ ...form, annual_income_limit: Number(e.target.value) })} />
+          </label>
+          <label>Warn at (%)
+            <input type="number" value={form.warn_at_percent}
+              onChange={e=>setForm({ ...form, warn_at_percent: Number(e.target.value) })} />
+          </label>
+          <label>Currency
+            <input value={form.currency} onChange={e=>setForm({ ...form, currency: e.target.value })} />
+          </label>
+          <div>
+            <button style={btn} onClick={()=>onSave(form)}>Save</button>
+          </div>
+        </div>
+      )}
+    </Panel>
+  )
+}
+
 /* ---------------- Shared UI bits ---------------- */
 
 function Center({ children }: any) {
@@ -558,7 +607,7 @@ function Panel({ title, children }: any) {
 }
 function Row({ children }: any) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', alignItems: 'center', gap: 10, marginBottom: 8 }}>
       {children}
     </div>
   )
